@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #111118;
+  --surface2: #16161f;
+  --border: #1e1e2e;
+  --accent: #00e5a0;
+  --accent-dim: #00b87a;
+  --accent-glow: rgba(0, 229, 160, 0.15);
+  --muted: #6b7280;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display { font-family: 'Syne', system-ui, sans-serif; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* Score badges */
+.badge-alta { background: rgba(0,229,160,0.12); color: #00e5a0; border: 1px solid rgba(0,229,160,0.25); }
+.badge-media { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+.badge-baixa { background: rgba(107,114,128,0.12); color: #9ca3af; border: 1px solid rgba(107,114,128,0.25); }
+
+/* Card hover */
+.article-card { transition: border-color 0.2s, box-shadow 0.2s; }
+.article-card:hover { border-color: rgba(0,229,160,0.3); box-shadow: 0 0 20px rgba(0,229,160,0.05); }
+
+/* Glow accent */
+.accent-glow { text-shadow: 0 0 20px rgba(0,229,160,0.4); }
