@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -9,8 +9,13 @@ export async function GET(req: NextRequest) {
   const page = parseInt(searchParams.get('page') || '1')
   const limit = 20
 
-  const admin = supabaseAdmin()
-  let query = admin
+  // Usa chave publica para leitura — RLS permite acesso publico a articles
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
+  let query = supabase
     .from('articles')
     .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
@@ -18,10 +23,14 @@ export async function GET(req: NextRequest) {
 
   if (category && category !== 'todas') query = query.eq('category', category)
   if (relevance && relevance !== 'todas') query = query.eq('relevance_level', relevance)
-  if (search) query = query.or(`title.ilike.%${search}%,summary_compact.ilike.%${search}%,tags.cs.{${search}}`)
+  if (search) query = query.or(`title.ilike.%${search}%,summary_compact.ilike.%${search}%`)
 
   const { data, error, count } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ articles: data, total: count, page, limit })
+  if (error) {
+    console.error('Articles API error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ articles: data || [], total: count || 0, page, limit })
 }
