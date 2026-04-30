@@ -25,14 +25,26 @@ function ArticleCard({ article, isFavorite, onFavorite }: {
   const [expanded, setExpanded] = useState(false)
   const cat = CATEGORIES[article.category as Category]
 
+  // Auto-expandir e rolar quando chega via âncora #article-xxx
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.location.hash === `#article-${article.id}`) {
+      setExpanded(true)
+      setTimeout(() => {
+        document.getElementById(`article-${article.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
+    }
+  }, [article.id])
+
   function generateLinkedInPost() {
-    const text = `💡 ${article.title}\n\n${article.summary_expanded}\n\nFonte: ${article.source_name}\n\n#inovação #empreendedorismo #negócios #tecnologia #IA`
+    const radarLink = `https://radar.codigointraempreendedor.com.br/dashboard#article-${article.id}`
+    const text = `💡 ${article.title}\n\n${article.summary_expanded}\n\nFonte: ${article.source_name}\n\nLeia a análise completa no Radar CI:\n${radarLink}\n\n#inovação #empreendedorismo #negócios #tecnologia #IA`
     navigator.clipboard.writeText(text)
     alert('Post copiado! Cole no LinkedIn.')
   }
 
   return (
-    <div className="article-card rounded-xl p-5 mb-4" style={{background: 'var(--surface)', border: '1px solid var(--border)'}}>
+    <div id={`article-${article.id}`} className="article-card rounded-xl p-5 mb-4" style={{background: 'var(--surface)', border: '1px solid var(--border)', scrollMarginTop: '80px'}}>
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
