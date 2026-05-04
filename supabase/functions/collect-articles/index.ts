@@ -30,6 +30,10 @@ async function feed(url: string): Promise<any[]> {
     headers: { 'User-Agent': 'RadarCI/1.0' },
     signal: AbortSignal.timeout(7000)
   })
+  if (!r.ok) {
+    console.log('[FEED HTTP ERROR]', r.status, url)
+    return []
+  }
   const xml = await r.text()
   const out: any[] = []
   const re = /<item[^>]*>([\s\S]*?)<\/item>|<entry[^>]*>([\s\S]*?)<\/entry>/gi
@@ -55,19 +59,24 @@ async function feed(url: string): Promise<any[]> {
       })
     }
   }
+  console.log('[FEED PARSED]', url, 'items:', out.length, 'xml_size:', xml.length)
   return out
 }
 
 Deno.serve(async () => {
+  console.log('[COLLECT START]', new Date().toISOString())
   const db = createClient(SUPABASE_URL, SUPABASE_KEY)
   const { data: sources } = await db.from('sources').select('*').eq('active', true)
 
   if (!sources || sources.length === 0) {
+    console.log('[COLLECT END] no sources')
     return new Response(
       JSON.stringify({ message: 'no sources' }),
       { headers: { 'Content-Type': 'application/json' } }
     )
   }
+
+  console.log('[COLLECT] active sources:', sources.length)
 
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - 15)
@@ -75,22 +84,44 @@ Deno.serve(async () => {
   let processed = 0
   let saved = 0
   let errors = 0
+  let duplicates = 0
+  let outOfDate = 0
   const log: string[] = []
 
   for (const src of sources) {
     try {
       log.push('> ' + src.name)
-      const items = (await feed(src.rss_url))
+      const allItems = await feed(src.rss_url)
+      const items = allItems
         .slice(0, 5)
-        .filter((i: any) => !i.pubDate || new Date(i.pubDate) > cutoff)
+        .filter((i: any) => {
+          if (!i.pubDate) return true
+          const isFresh = new Date(i.pubDate) > cutoff
+          if (!isFresh) outOfDate++
+          return isFresh
+        })
+
+      console.log('[SOURCE]', src.name, 'parsed:', allItems.length, 'fresh:', items.length)
 
       for (const item of items) {
-        const { data: ex } = await db
+        // FIX: maybeSingle nao lanca erro quando nao encontra registro
+        const { data: ex, error: checkError } = await db
           .from('articles')
           .select('id')
           .eq('original_url', item.link)
-          .single()
-        if (ex) continue
+          .maybeSingle()
+
+        if (checkError) {
+          console.log('[CHECK ERROR]', src.name, item.link, checkError.message)
+          errors++
+          log.push('  CHECK ERR: ' + checkError.message)
+          continue
+        }
+
+        if (ex) {
+          duplicates++
+          continue
+        }
 
         try {
           const a = await ai(item.title, item.content || item.title)
@@ -98,7 +129,7 @@ Deno.serve(async () => {
           const score = a.relevanceScore || 50
           const level = score >= 75 ? 'alta' : score >= 40 ? 'media' : 'baixa'
 
-          await db.from('articles').insert({
+          const { error: insertError } = await db.from('articles').insert({
             title: a.titlePtBr || item.title,
             title_original: item.title,
             summary_compact: a.summaryCompact || '',
@@ -115,11 +146,20 @@ Deno.serve(async () => {
             type: 'auto',
             media_type: 'article'
           })
-          saved++
-          log.push('  OK: ' + (a.titlePtBr || item.title))
+
+          if (insertError) {
+            console.log('[INSERT ERROR]', src.name, insertError.message)
+            errors++
+            log.push('  INSERT ERR: ' + insertError.message)
+          } else {
+            saved++
+            console.log('[SAVED]', src.name, 'score:', score, 'title:', (a.titlePtBr || item.title).slice(0, 60))
+            log.push('  OK score=' + score + ': ' + (a.titlePtBr || item.title).slice(0, 60))
+          }
         } catch (e: any) {
           errors++
-          log.push('  ERRO: ' + e.message)
+          console.log('[AI ERROR]', src.name, e.message)
+          log.push('  AI ERR: ' + e.message)
         }
       }
 
@@ -129,12 +169,15 @@ Deno.serve(async () => {
 
     } catch (e: any) {
       errors++
+      console.log('[SOURCE ERROR]', src.name, e.message)
       log.push('ERRO fonte ' + src.name + ': ' + e.message)
     }
   }
 
+  console.log('[COLLECT END]', JSON.stringify({ sources: sources.length, processed, saved, errors, duplicates, outOfDate }))
+
   return new Response(
-    JSON.stringify({ processed, saved, errors, log }, null, 2),
+    JSON.stringify({ processed, saved, errors, duplicates, outOfDate, log }, null, 2),
     { headers: { 'Content-Type': 'application/json' } }
   )
 })
