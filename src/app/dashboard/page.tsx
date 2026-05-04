@@ -11,6 +11,23 @@ const RELEVANCE_FILTERS = [
 
 const PAGE_SIZE = 20
 
+// Helper centralizado para registrar eventos de uso
+async function trackEvent(eventType: string, articleId?: string, metadata?: Record<string, any>) {
+  try {
+    await fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: eventType,
+        article_id: articleId,
+        metadata: metadata || {}
+      })
+    })
+  } catch (err) {
+    console.error('Tracking failed:', err)
+  }
+}
+
 function ScoreBadge({ level, score }: { level: string; score: number }) {
   return (
     <span className={`badge-${level} text-xs px-2 py-1 rounded-full font-semibold`}>
@@ -41,7 +58,35 @@ function ArticleCard({ article, isFavorite, onFavorite }: {
     const radarLink = `https://radar.codigointraempreendedor.com.br/dashboard#article-${article.id}`
     const text = `💡 ${article.title}\n\n${article.summary_expanded}\n\nFonte: ${article.source_name}\n\nLeia a análise completa no Radar CI:\n${radarLink}\n\n#inovação #empreendedorismo #negócios #tecnologia #IA`
     navigator.clipboard.writeText(text)
+    
+    trackEvent('linkedin_post_click', article.id, {
+      article_title: article.title,
+      article_source: article.source_name,
+      article_score: article.relevance_score,
+      article_type: article.type
+    })
+    
     alert('Post copiado! Cole no LinkedIn.')
+  }
+
+  function handleExpandToggle() {
+    const newExpanded = !expanded
+    setExpanded(newExpanded)
+    if (newExpanded) {
+      trackEvent('article_expanded', article.id, {
+        article_title: article.title,
+        article_source: article.source_name,
+        article_score: article.relevance_score
+      })
+    }
+  }
+
+  function handleOriginalClick() {
+    trackEvent('original_link_click', article.id, {
+      article_title: article.title,
+      article_source: article.source_name,
+      original_url: article.original_url
+    })
   }
 
   return (
@@ -103,11 +148,12 @@ function ArticleCard({ article, isFavorite, onFavorite }: {
           📋 Post LinkedIn
         </button>
         <a href={article.original_url} target="_blank" rel="noopener noreferrer"
+          onClick={handleOriginalClick}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
           style={{background: 'var(--surface2)', color: 'var(--muted)'}}>
           ↗ Ler original
         </a>
-        <button onClick={() => setExpanded(!expanded)}
+        <button onClick={handleExpandToggle}
           className="ml-auto text-xs flex items-center gap-1" style={{color: 'var(--muted)'}}>
           {expanded ? '∧ Menos' : '∨ Mais'}
         </button>
@@ -119,6 +165,7 @@ function ArticleCard({ article, isFavorite, onFavorite }: {
           <p className="text-sm leading-relaxed whitespace-pre-line" style={{color: 'var(--text-dim)'}}>{article.strategic_analysis}</p>
           <div className="flex gap-3 mt-4">
             <a href={article.original_url} target="_blank" rel="noopener noreferrer"
+              onClick={handleOriginalClick}
               className="text-xs px-4 py-2 rounded-lg font-medium flex items-center gap-2"
               style={{background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)'}}>
               ↗ Abrir artigo original
@@ -137,7 +184,6 @@ function Pagination({ currentPage, totalPages, onPageChange }: {
 }) {
   if (totalPages <= 1) return null
 
-  // Lógica de páginas visíveis: sempre mostra primeira, última, atual e vizinhas
   const pages: (number | 'ellipsis')[] = []
   const showEllipsisStart = currentPage > 3
   const showEllipsisEnd = currentPage < totalPages - 2
@@ -236,19 +282,50 @@ export default function DashboardPage() {
   // Reseta para página 1 quando filtros mudam
   useEffect(() => { setPage(1) }, [category, relevance, search])
 
+  // Trackeia uso de filtros
+  useEffect(() => {
+    if (category !== 'todas') {
+      trackEvent('category_filter', undefined, { category })
+    }
+  }, [category])
+
+  useEffect(() => {
+    if (relevance !== 'todas') {
+      trackEvent('relevance_filter', undefined, { relevance })
+    }
+  }, [relevance])
+
+  useEffect(() => {
+    if (search) {
+      trackEvent('search', undefined, { query: search })
+    }
+  }, [search])
+
   function handlePageChange(newPage: number) {
     setPage(newPage)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    trackEvent('page_change', undefined, { from_page: page, to_page: newPage })
   }
 
   function handleFavorite(articleId: string, action: 'add' | 'remove') {
     setFavorites(prev =>
       action === 'add' ? [...prev, articleId] : prev.filter(id => id !== articleId)
     )
+    
+    const article = articles.find(a => a.id === articleId)
+    
+    // Mantém compat com endpoint atual de favorites (que usa user_id: 'anon')
     fetch('/api/favorites', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ article_id: articleId, action, user_id: 'anon' })
+    })
+
+    // Tracking via /api/events (com user_id real do usuário logado)
+    trackEvent(action === 'add' ? 'favorite_added' : 'favorite_removed', articleId, {
+      article_title: article?.title,
+      article_source: article?.source_name,
+      article_score: article?.relevance_score
     })
   }
 
